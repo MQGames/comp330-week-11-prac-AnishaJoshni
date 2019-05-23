@@ -7,6 +7,7 @@ uniform mat4 u_worldMatrix;
 uniform mat4 u_viewMatrix;
 uniform mat4 u_projectionMatrix;
 
+varying vec2 v_texcoord;
 void main() {
     gl_Position = u_projectionMatrix * u_viewMatrix * u_worldMatrix * a_position;
 }
@@ -16,7 +17,7 @@ const fragmentShaderSource = `
 precision mediump float;
 
 void main() {
-    gl_FragColor = vec4(1,1,1,1); 
+    gl_FragColor = vec4(1, 1, 1, 1); 
 }
 `;
 
@@ -52,6 +53,46 @@ function createProgram(gl, vertexShader, fragmentShader) {
     }
     return program;
 }
+
+// Load a texture from a URL or file location
+
+function loadTexture(gl, url) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    const image = new Image();
+    const level = 0;
+    const internalFormat = gl.RGBA;
+    const width = 1;
+    const height = 1;
+    const border = 0;
+    const srcFormat = gl.RGBA;
+    const srcType = gl.UNSIGNED_BYTE;
+    const pixel = new Uint8Array([0, 0, 255, 255]);  // opaque blue
+    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                    width, height, border, srcFormat, srcType,
+                    pixel);          
+
+    // Loading images is asynchronous. This sets up a callback that is executed
+    // when the image has loaded, to turn it into a texture.
+
+    image.onload = function() {                
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                    srcFormat, srcType, image);  
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+
+    };
+
+    image.src = url;      
+
+    return texture;
+}
+
 
 function main() {
 
@@ -94,7 +135,7 @@ function main() {
         shader[name] = gl.getUniformLocation(program, name);
     }
 
-    // cylindrical mesh
+    // Generate cylindrical mesh
 
     let points = [];
 
@@ -108,20 +149,18 @@ function main() {
         let x1 = Math.cos(angle1);
         let z1 = Math.sin(angle1);
 
-        points.push(x0, 1, z0);
-        points.push(x1, 0, z1);
-        points.push(x0, 0, z0);
+        points.push(x0, 0.5, z0);
+        points.push(x1, -0.5, z1);
+        points.push(x0, -0.5, z0);
 
-        points.push(x1, 0, z1);
-        points.push(x0, 1, z0);
-        points.push(x1, 1, z1);
+        points.push(x1, -0.5, z1);
+        points.push(x0, 0.5, z0);
+        points.push(x1, 0.5, z1);
     }
 
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(points), gl.STATIC_DRAW);
-
-    let checkerBoardTexture = new Texture(gl, "textures/checkerboard.png");
 
     // === Per Frame operations ===
 
@@ -134,11 +173,13 @@ function main() {
     let update = function(deltaTime) {
         check(isNumber(deltaTime));
 
+        // use the keys to control the camera
+
         if (inputManager.keyPressed["ArrowLeft"]) {
-            cameraRotation[1] += cameraRotationSpeed * deltaTime;
+            cameraRotation[1] -= cameraRotationSpeed * deltaTime;
         }
         if (inputManager.keyPressed["ArrowRight"]) {
-            cameraRotation[1] -= cameraRotationSpeed * deltaTime;
+            cameraRotation[1] += cameraRotationSpeed * deltaTime;
         }
         if (inputManager.keyPressed["ArrowUp"]) {
             cameraRotation[0] -= cameraRotationSpeed * deltaTime;
@@ -168,10 +209,11 @@ function main() {
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
+        // set up the camera projection matrix
         {
             const fovy = Math.PI / 2;
             const aspect = canvas.width / canvas.height;
-            const near = 0.1;
+            const near = 0.01;
             const far = 100;
             glMatrix.mat4.perspective(projectionMatrix, fovy, aspect, near, far);
             gl.uniformMatrix4fv(shader["u_projectionMatrix"], false, projectionMatrix);
